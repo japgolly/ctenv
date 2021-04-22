@@ -1,12 +1,5 @@
 package japgolly.ctenv.plugin
 
-// import ast.tpd.Tree
-// import Constants.Constant
-// import Decorators._
-// import Flags._
-// import Names._
-// import StdNames.nme
-// import SymDenotations._
 import dotty.tools.dotc.*
 import dotty.tools.dotc.ast.tpd.*
 import dotty.tools.dotc.core.*
@@ -41,9 +34,10 @@ object InterceptApi:
   }
 
   object PlaceholderType {
-    def unapply(tpe: Type)(using Context): Boolean =
+    def unapply(tpe: TypeTree | Type)(using Context): Boolean =
       tpe match
         case ConstantType(Constant("CTENV:135ac5f7-7653-406c-8bd8-a8b87945c090")) => true
+        case t: TypeTree => unapply(t.tpe)
         case _ => false
   }
 
@@ -76,19 +70,22 @@ import InterceptApi.{phases => _, *}
 /** Intercept methods in non-inline scopes. */
 final class InterceptApi1(env: Env) extends PluginPhase:
 
+  // TODO: Remove after it all works
+  override def changesParents = true
+  override def changesMembers = true
+
   override val phaseName = Pass1Name
   override val runsAfter = Set(FrontEnd.name)
 
   private var initialised = false
-  private var CtEnv          : Symbol = _
   private var CtEnv_getOrNull: Symbol = _
 
   override def prepareForUnit(tree: Tree)(using Context): Context =
     if !initialised then
       Debug.init()
-      CtEnv           = Symbols.requiredPackage("japgolly.ctenv.CTEnv").moduleClass
+      val CtEnv = Symbols.requiredPackage("japgolly.ctenv.CTEnv").moduleClass
       CtEnv_getOrNull = CtEnv.requiredMethod("getOrNull")
-      initialised     = true
+      initialised = true
     ctx
 
   override def transformUnit(tree: Tree)(using Context): Tree =
@@ -112,10 +109,28 @@ final class InterceptApi1(env: Env) extends PluginPhase:
       case _ =>
     tree
 
-  // override def transformDefDef(tree: DefDef)(using Context): Tree =
-  //   if tree.symbol.flags.is(Flags.Inline) then
-  //     Debug.show("[1] DefDef", tree)
-  //   tree
+  override def transformValDef(tree: ValDef)(using Context): Tree =
+    if tree.symbol.flags.is(Flags.Inline) then
+      tree.tpt match
+        case PlaceholderType() =>
+          tree.rhs match
+            case ConstantValue(value: String) =>
+
+              // Before : ConstantType(Constant(CTENV:135ac5f7-7653-406c-8bd8-a8b87945c090))
+              // After 1: ConstantType(Constant(aardvark))
+              // After 2: ConstantType(Constant(CTENV:135ac5f7-7653-406c-8bd8-a8b87945c090))
+              val tpt = valueType(value)
+              val replacement = cpy.ValDef(tree)(tpt = tpt)
+              println()
+              println("Before : " + tree.tpt.tpe)
+              println("After 1: " + replacement.tpt.tpe)
+              println("After 2: " + replacement.tpe.widenTermRefExpr)
+              println()
+
+              return replacement
+            case _ =>
+        case _ =>
+    tree
 
 end InterceptApi1
 
@@ -123,11 +138,14 @@ end InterceptApi1
 
 final class InterceptApi2(env: Env) extends PluginPhase:
 
+  // TODO: Remove after it all works
+  override def changesParents = true
+  override def changesMembers = true
+
   override val phaseName = Pass2Name
   override val runsAfter = Set(PostTyper.name)
 
   private var initialised = false
-  private var CtEnv          : Symbol = _
   private var CtEnv_getOrNull: Symbol = _
 
   private var replacements = Map.empty[Tree, String | Null]
@@ -135,9 +153,9 @@ final class InterceptApi2(env: Env) extends PluginPhase:
   override def prepareForUnit(tree: Tree)(using Context): Context =
     if !initialised then
       Debug.init()
-      CtEnv           = Symbols.requiredPackage("japgolly.ctenv.CTEnv").moduleClass
+      val CtEnv = Symbols.requiredPackage("japgolly.ctenv.CTEnv").moduleClass
       CtEnv_getOrNull = CtEnv.requiredMethod("getOrNull")
-      initialised     = true
+      initialised = true
     ctx
 
   override def transformUnit(tree: Tree)(using Context): Tree =

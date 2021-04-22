@@ -60,9 +60,6 @@ object Build {
 
   private def scalac3Flags = Seq(
     "-new-syntax",
-    // "-Xcheck-macros",
-    // "-Xprint:typer,posttyper",
-    // "-Ycheck:all",
     "-Yindent-colons",
   )
 
@@ -92,6 +89,19 @@ object Build {
   private def alwaysCleanBuild: PE =
     _.settings(
       compile := (Compile / compile).dependsOn(Compile / clean).value,
+    )
+
+  private def debugPhases: PE =
+    _.settings(
+      scalacOptions ++= byScalaVersion {
+        case (2, _) => Nil
+        case (3, _) => Seq(
+          // "-Xcheck-macros",
+          // "-Xprint:typer,posttyper,CTEnv.InterceptApi.2,pickler,inlining,postInlining,inlineVals",
+          "-Xprint:all",
+          // "-Ycheck:all",
+        )
+      }.value,
     )
 
   private def testModule(env: (String, String)*): PE = _

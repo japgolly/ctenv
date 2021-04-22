@@ -5,7 +5,7 @@ import dotty.tools.dotc.core.Contexts.*
 import scala.Console.*
 
 object Debug {
-  private inline val enabled = false
+  private inline val enabled = true
 
   inline def init(): Unit =
     inline if enabled then
@@ -30,6 +30,6 @@ object Debug {
   inline def logMethods(a: Any): Unit =
     inline if enabled then
       println()
-      a.getClass.getMethods.nn.map(m => s"${m.nn.getName} -- $m").sorted.foreach(println)
+      a.getClass.getMethods.map(m => s"${m.getName}   --   $m").filter(_ contains "public ").sorted.foreach(println)
       println()
 }
