@@ -18,6 +18,15 @@ object Build {
     "-language:implicitConversions",
     "-language:postfixOps",
     "-unchecked",                                    // Enable additional warnings where generated code depends on assumptions.
+    "-Xmixin-force-forwarders:false",                // Only generate mixin forwarders required for program correctness.
+    "-Xno-forwarders",                               // Do not generate static forwarders in mirror classes.
+    "-Yno-generic-signatures",                       // Suppress generation of generic signatures for Java.
+  )
+
+  private def scalac2Flags = Seq(
+    "-opt-inline-from:japgolly.**",
+    "-opt-inline-from:scala.**",
+    "-opt:l:inline",
     "-Wconf:msg=may.not.be.exhaustive:e",            // Make non-exhaustive matches errors instead of warnings
     "-Wdead-code",                                   // Warn when dead code is identified.
     "-Wunused:explicits",                            // Warn if an explicit parameter is unused.
@@ -43,24 +52,17 @@ object Build {
     "-Xlint:private-shadow",                         // A private field (or class parameter) shadows a superclass field.
     "-Xlint:stars-align",                            // In a pattern, a sequence wildcard `_*` should match all of a repeated parameter.
     "-Xlint:valpattern",                             // Enable pattern checks in val definitions.
-    "-Xmixin-force-forwarders:false",                // Only generate mixin forwarders required for program correctness.
-    "-Xno-forwarders",                               // Do not generate static forwarders in mirror classes.
     "-Ycache-macro-class-loader:last-modified",
     "-Ycache-plugin-class-loader:last-modified",
     "-Yjar-compression-level", "9",                  // compression level to use when writing jar files
-    "-Yno-generic-signatures",                       // Suppress generation of generic signatures for Java.
     "-Ypatmat-exhaust-depth", "off",
-  )
-
-  private def scalac2Flags = Seq(
-    "-opt:l:inline",
-    "-opt-inline-from:japgolly.**",
-    "-opt-inline-from:scala.**",
   )
 
   private def scalac3Flags = Seq(
     "-new-syntax",
-    "-Yexplicit-nulls",
+    // "-Xcheck-macros",
+    // "-Xprint:typer,posttyper",
+    // "-Ycheck:all",
     "-Yindent-colons",
   )
 
@@ -87,20 +89,66 @@ object Build {
       testFrameworks      += new TestFramework("utest.runner.Framework"),
     )
 
+  private def alwaysCleanBuild: PE =
+    _.settings(
+      compile := (Compile / compile).dependsOn(Compile / clean).value,
+    )
+
+  private def testModule(env: (String, String)*): PE = _
+    .configure(commonSettings, preventPublication, utestSettings, alwaysCleanBuild)
+    .dependsOn(api)
+    .settings(
+      scalacOptions ++= {
+        val jar = (plugin / Compile / packageBin).value
+        Seq(
+          s"-Xplugin:${jar.getAbsolutePath}",
+          s"-P:ctenv:_dummy_${jar.lastModified}", // ensures recompile (thanks kind-projector!)
+        )
+      },
+      scalacOptions ++= env.map { case (k,v) => s"-P:ctenv:$k=$v" },
+      Test / scalacOptions ~= { _.filterNot(_ matches "^-(?:Xplugin|Xprint|P).*") },
+    )
+
   // ===================================================================================================================
 
   lazy val root = project
     .in(file("."))
     .configure(commonSettings, preventPublication)
     .aggregate(
-      compilerPlugin,
+      plugin,
+      api,
+      tests1,
+      tests2,
     )
 
-  lazy val compilerPlugin = project
-    .in(file("compiler-plugin"))
-    .configure(commonSettings, publicationSettings, utestSettings)
+  lazy val plugin = project
+    .configure(commonSettings, publicationSettings, utestSettings, alwaysCleanBuild)
     .settings(
-      moduleName := "compiler-plugin",
       libraryDependencies += Dep.ScalaCompiler.value % Provided,
+      Compile / unmanagedResourceDirectories ++= {
+        val base = (Compile / resourceDirectory).value.absolutePath
+        CrossVersion.partialVersion(scalaVersion.value) match {
+          case Some((2, _))  => Seq(file(base + "-2"))
+          case Some((3, _))  => Seq(file(base + "-3"))
+          case _             => Nil
+        }
+      },
+    )
+
+  lazy val api = project
+    .in(file("api"))
+    .configure(commonSettings, publicationSettings, utestSettings)
+    .settings(scalacOptions -= "-Yexplicit-nulls")
+
+  lazy val tests1 = project
+    .configure(testModule("a" -> "aardvark"))
+
+  lazy val tests2 = project
+    .configure(testModule("a" -> "aardvark"))
+    .settings(
+      scalacOptions ++= byScalaVersion {
+                          case (2, _) => Nil
+                          case (3, _) => "-Yexplicit-nulls" :: Nil
+                        }.value,
     )
 }

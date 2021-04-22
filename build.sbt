@@ -4,5 +4,8 @@ ThisBuild / organization := "com.github.japgolly.ctenv"
 ThisBuild / shellPrompt  := ((s: State) => Project.extract(s).currentRef.project + "> ")
 ThisBuild / startYear    := Some(2021)
 
-lazy val root           = Build.root
-lazy val compilerPlugin = Build.compilerPlugin
+lazy val root   = Build.root
+lazy val plugin = Build.plugin
+lazy val api    = Build.api
+lazy val tests1 = Build.tests1
+lazy val tests2 = Build.tests2

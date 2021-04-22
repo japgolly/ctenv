@@ -1,0 +1,4 @@
+<plugin>
+  <name>ctenv</name>
+  <classname>japgolly.ctenv.plugin.CTEnvPlugin</classname>
+</plugin>
